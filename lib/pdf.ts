@@ -1,6 +1,15 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import crypto from 'crypto';
 
+export interface TextAnnotation {
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  /** 0-indexed page number */
+  page: number;
+}
+
 export interface SignatureEmbedOptions {
   pdfBuffer: Buffer;
   signatureImageBuffer: Buffer;
@@ -14,6 +23,29 @@ export interface SignatureEmbedOptions {
   label?: string;
   signerName?: string;
   signedAt?: Date;
+  textAnnotations?: TextAnnotation[];
+}
+
+// The PDF viewer always renders pages at this pixel width.
+const RENDERED_PX_WIDTH = 560;
+
+/** Convert UI pixel coords (top-left origin) to PDF points (bottom-left origin). */
+function toPageCoords(
+  uiX: number,
+  uiY: number,
+  uiW: number,
+  uiH: number,
+  pageW: number,
+  pageH: number,
+) {
+  const scale = pageW / RENDERED_PX_WIDTH;
+  return {
+    x: uiX * scale,
+    y: pageH - (uiY + uiH) * scale,
+    width: uiW * scale,
+    height: uiH * scale,
+    scale,
+  };
 }
 
 /** Embed a signature image into a PDF page and return the modified PDF bytes */
@@ -21,26 +53,32 @@ export async function embedSignature(opts: SignatureEmbedOptions): Promise<Uint8
   const pdfDoc = await PDFDocument.load(opts.pdfBuffer);
   const pages = pdfDoc.getPages();
   const targetPage = pages[opts.page];
+  const { width: pageW, height: pageH } = targetPage.getSize();
 
   const pngImage = await pdfDoc.embedPng(opts.signatureImageBuffer);
+  const { x, y, width, height } = toPageCoords(opts.x, opts.y, opts.width, opts.height, pageW, pageH);
 
-  targetPage.drawImage(pngImage, {
-    x: opts.x,
-    y: opts.y,
-    width: opts.width,
-    height: opts.height,
-  });
+  targetPage.drawImage(pngImage, { x, y, width, height });
 
-  if (opts.label || opts.signerName) {
+  // Embed text annotations
+  if (opts.textAnnotations?.length) {
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const text = [opts.signerName, opts.label].filter(Boolean).join(' — ');
-    targetPage.drawText(text, {
-      x: opts.x,
-      y: opts.y - 14,
-      size: 10,
-      font,
-      color: rgb(0.2, 0.2, 0.2),
-    });
+    for (const ann of opts.textAnnotations) {
+      if (!ann.text.trim()) continue;
+      const annPage = pages[ann.page];
+      if (!annPage) continue;
+      const { width: annPageW, height: annPageH } = annPage.getSize();
+      const annScale = annPageW / RENDERED_PX_WIDTH;
+      const fontSize = ann.fontSize * annScale;
+      annPage.drawText(ann.text, {
+        x: ann.x * annScale,
+        // UI y is the top edge of the text block; PDF y is the text baseline.
+        y: annPageH - ann.y * annScale - fontSize,
+        size: fontSize,
+        font,
+        color: rgb(0.05, 0.05, 0.05),
+      });
+    }
   }
 
   return pdfDoc.save();

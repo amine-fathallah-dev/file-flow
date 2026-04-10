@@ -5,6 +5,7 @@ import { useDropzone } from 'react-dropzone';
 import PDFViewer from './PDFViewer';
 import SignatureCanvas from './SignatureCanvas';
 import SignatureDragger from './SignatureDragger';
+import TextBlock, { TextAnnotationData } from './TextBlock';
 import Button from '@/components/ui/Button';
 import Card, { CardBody } from '@/components/ui/Card';
 
@@ -19,6 +20,12 @@ interface SignaturePosition {
 }
 
 const STEPS = ['Upload', 'Édition', 'Génération'];
+const CONTAINER_W = 560;
+const CONTAINER_H = 800;
+const DEFAULT_SIG_W = 160;
+const DEFAULT_SIG_H = 60;
+
+let nextId = 1;
 
 export default function SignTool() {
   const [step, setStep] = useState<Step>(1);
@@ -27,12 +34,15 @@ export default function SignTool() {
   const [currentPage, setCurrentPage] = useState(1);
   const [method, setMethod] = useState<SignatureMethod>('draw');
   const [signatureDataUrl, setSignatureDataUrl] = useState<string>('');
-  const [sigPos, setSigPos] = useState<SignaturePosition>({ x: 40, y: 40, width: 160, height: 60 });
-  const [label, setLabel] = useState('');
+  const [sigScale, setSigScale] = useState(1);
+  const sigWidth = Math.round(DEFAULT_SIG_W * sigScale);
+  const sigHeight = Math.round(DEFAULT_SIG_H * sigScale);
+  const [sigPos, setSigPos] = useState<SignaturePosition>({ x: 40, y: 40, width: DEFAULT_SIG_W, height: DEFAULT_SIG_H });
+  const [textAnnotations, setTextAnnotations] = useState<TextAnnotationData[]>([]);
+  const [newFontSize, setNewFontSize] = useState(14);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Step 1 — Upload dropzone
   const onDrop = useCallback((accepted: File[]) => {
     const f = accepted[0];
     if (!f) return;
@@ -54,12 +64,36 @@ export default function SignTool() {
     setSignatureDataUrl(dataUrl);
   }
 
-  async function handleUploadSignature(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleUploadSignature(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
     const reader = new FileReader();
     reader.onload = (ev) => setSignatureDataUrl(ev.target?.result as string);
     reader.readAsDataURL(f);
+  }
+
+  function addTextAnnotation() {
+    setTextAnnotations((prev) => [
+      ...prev,
+      {
+        id: String(nextId++),
+        text: '',
+        x: Math.round(CONTAINER_W / 2 - 60),
+        y: Math.round(CONTAINER_H / 2),
+        fontSize: newFontSize,
+        page: currentPage - 1,
+      },
+    ]);
+  }
+
+  function updateAnnotation(id: string, partial: Partial<TextAnnotationData>) {
+    setTextAnnotations((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, ...partial } : a))
+    );
+  }
+
+  function deleteAnnotation(id: string) {
+    setTextAnnotations((prev) => prev.filter((a) => a.id !== id));
   }
 
   async function handleGenerate() {
@@ -72,12 +106,12 @@ export default function SignTool() {
       const formData = new FormData();
       formData.append('pdf', pdfFile);
       formData.append('signatureDataUrl', signatureDataUrl);
-      formData.append('page', String(currentPage - 1)); // 0-indexed for pdf-lib
+      formData.append('page', String(currentPage - 1));
       formData.append('x', String(sigPos.x));
       formData.append('y', String(sigPos.y));
       formData.append('width', String(sigPos.width));
       formData.append('height', String(sigPos.height));
-      formData.append('label', label);
+      formData.append('textAnnotations', JSON.stringify(textAnnotations));
 
       const res = await fetch('/api/sign', { method: 'POST', body: formData });
       if (!res.ok) {
@@ -99,6 +133,34 @@ export default function SignTool() {
       setLoading(false);
     }
   }
+
+  // Annotations visible on the current page
+  const pageAnnotations = textAnnotations.filter((a) => a.page === currentPage - 1);
+
+  const overlay = (signatureDataUrl || pageAnnotations.length > 0) ? (
+    <>
+      {signatureDataUrl && (
+        <SignatureDragger
+          signatureDataUrl={signatureDataUrl}
+          containerWidth={CONTAINER_W}
+          containerHeight={CONTAINER_H}
+          width={sigWidth}
+          height={sigHeight}
+          onPositionChange={setSigPos}
+        />
+      )}
+      {pageAnnotations.map((ann) => (
+        <TextBlock
+          key={ann.id}
+          annotation={ann}
+          containerWidth={CONTAINER_W}
+          containerHeight={CONTAINER_H}
+          onUpdate={updateAnnotation}
+          onDelete={deleteAnnotation}
+        />
+      ))}
+    </>
+  ) : undefined;
 
   return (
     <div className="space-y-6">
@@ -156,86 +218,143 @@ export default function SignTool() {
               fileUrl={pdfUrl}
               currentPage={currentPage}
               onPageChange={setCurrentPage}
-              overlay={signatureDataUrl ? (
-                <SignatureDragger
-                  signatureDataUrl={signatureDataUrl}
-                  containerWidth={560}
-                  containerHeight={800}
-                  onPositionChange={setSigPos}
-                />
-              ) : undefined}
+              overlay={overlay}
             />
           </div>
 
-          {/* Signature panel */}
-          <Card>
-            <CardBody className="space-y-5">
-              {/* Method toggle */}
-              <div className="flex rounded-lg border border-gray-200 p-1">
-                {(['draw', 'upload'] as SignatureMethod[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMethod(m)}
-                    className={[
-                      'flex-1 rounded-md py-1.5 text-sm font-medium transition-colors',
-                      method === m ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-700',
-                    ].join(' ')}
-                  >
-                    {m === 'draw' ? 'Dessiner' : 'Importer une image'}
-                  </button>
-                ))}
-              </div>
+          {/* Side panel */}
+          <div className="space-y-4">
+            {/* Signature */}
+            <Card>
+              <CardBody className="space-y-5">
+                <h3 className="text-sm font-semibold text-gray-900">Signature</h3>
 
-              {method === 'draw' && (
-                <SignatureCanvas onConfirm={handleSignatureConfirm} />
-              )}
-
-              {method === 'upload' && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-gray-700">Image de signature (PNG) :</p>
-                  <input
-                    type="file"
-                    accept="image/png"
-                    onChange={handleUploadSignature}
-                    className="block text-sm text-gray-500 file:mr-3 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
-                  />
+                {/* Method toggle */}
+                <div className="flex rounded-lg border border-gray-200 p-1">
+                  {(['draw', 'upload'] as SignatureMethod[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMethod(m)}
+                      className={[
+                        'flex-1 rounded-md py-1.5 text-sm font-medium transition-colors',
+                        method === m ? 'bg-brand-600 text-white' : 'text-gray-500 hover:text-gray-700',
+                      ].join(' ')}
+                    >
+                      {m === 'draw' ? 'Dessiner' : 'Importer'}
+                    </button>
+                  ))}
                 </div>
-              )}
 
-              {signatureDataUrl && (
-                <div className="rounded-lg bg-green-50 p-3 text-xs text-green-700">
-                  Signature chargée — positionnez-la sur le document à gauche.
+                {method === 'draw' && (
+                  <SignatureCanvas onConfirm={handleSignatureConfirm} />
+                )}
+
+                {method === 'upload' && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-700">Image de signature (PNG) :</p>
+                    <input
+                      type="file"
+                      accept="image/png"
+                      onChange={handleUploadSignature}
+                      className="block text-sm text-gray-500 file:mr-3 file:rounded-md file:border-0 file:bg-brand-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
+                    />
+                  </div>
+                )}
+
+                {signatureDataUrl && (
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-green-50 p-3 text-xs text-green-700">
+                      Signature chargée — glissez-la sur le document pour la positionner.
+                    </div>
+                    <div className="flex items-center gap-3 text-sm text-gray-600">
+                      <span className="shrink-0">Taille :</span>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="3"
+                        step="0.1"
+                        value={sigScale}
+                        onChange={(e) => {
+                          const s = parseFloat(e.target.value);
+                          setSigScale(s);
+                          setSigPos((p) => ({
+                            ...p,
+                            width: Math.round(DEFAULT_SIG_W * s),
+                            height: Math.round(DEFAULT_SIG_H * s),
+                          }));
+                        }}
+                        className="w-full accent-brand-600"
+                      />
+                      <span className="shrink-0 text-xs text-gray-400">{Math.round(sigScale * 100)}%</span>
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+
+            {/* Text annotations */}
+            <Card>
+              <CardBody className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900">Annotations texte</h3>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={newFontSize}
+                      onChange={(e) => setNewFontSize(Number(e.target.value))}
+                      className="rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    >
+                      {[10, 12, 14, 16, 18, 22, 28].map((s) => (
+                        <option key={s} value={s}>{s}pt</option>
+                      ))}
+                    </select>
+                    <Button size="sm" onClick={addTextAnnotation}>
+                      + Ajouter
+                    </Button>
+                  </div>
                 </div>
-              )}
 
-              {/* Optional label */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Texte accompagnant (optionnel)
-                </label>
-                <input
-                  type="text"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                  placeholder="ex: Approuvé par Jean Dupont"
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
-                />
-              </div>
+                {textAnnotations.length === 0 ? (
+                  <p className="text-xs text-gray-400">
+                    Ajoutez des blocs de texte à placer librement sur le document.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {textAnnotations.map((ann) => (
+                      <li key={ann.id} className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                        <span className="flex-1 truncate font-medium text-gray-800">
+                          {ann.text || <span className="italic text-gray-400">vide</span>}
+                        </span>
+                        <span className="text-gray-400">p.{ann.page + 1} — {ann.fontSize}pt</span>
+                        <button
+                          onClick={() => deleteAnnotation(ann.id)}
+                          className="text-red-400 hover:text-red-600"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
 
-              {error && (
-                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-              )}
+                <p className="text-xs text-gray-400">
+                  Cliquez sur les blocs dans le PDF pour les déplacer. Tapez le texte directement dans le bloc.
+                </p>
+              </CardBody>
+            </Card>
 
-              <Button
-                onClick={handleGenerate}
-                disabled={!signatureDataUrl || loading}
-                loading={loading}
-                className="w-full"
-              >
-                Générer le document signé
-              </Button>
-            </CardBody>
-          </Card>
+            {error && (
+              <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+            )}
+
+            <Button
+              onClick={handleGenerate}
+              disabled={!signatureDataUrl || loading}
+              loading={loading}
+              className="w-full"
+            >
+              Générer le document signé
+            </Button>
+          </div>
         </div>
       )}
 
@@ -262,8 +381,17 @@ export default function SignTool() {
               </svg>
             </div>
             <p className="text-base font-semibold text-gray-900">Document signé avec succès</p>
-            <p className="text-sm text-gray-500">Le téléchargement a démarré. Retrouvez le document dans votre dashboard.</p>
-            <Button variant="secondary" onClick={() => { setStep(1); setPdfFile(null); setPdfUrl(''); setSignatureDataUrl(''); }}>
+            <p className="text-sm text-gray-500">Le téléchargement a démarré.</p>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setStep(1);
+                setPdfFile(null);
+                setPdfUrl('');
+                setSignatureDataUrl('');
+                setTextAnnotations([]);
+              }}
+            >
               Signer un autre document
             </Button>
           </CardBody>

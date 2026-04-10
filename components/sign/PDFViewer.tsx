@@ -7,7 +7,10 @@ import 'react-pdf/dist/Page/TextLayer.css';
 import Button from '@/components/ui/Button';
 
 // Use local worker bundled via webpack alias
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).toString();
 
 interface PDFViewerProps {
   fileUrl: string;
@@ -34,7 +37,7 @@ export default function PDFViewer({ fileUrl, currentPage, onPageChange, overlay 
           <Page pageNumber={currentPage} width={560} />
         </Document>
         {overlay && (
-          <div className="absolute inset-0">{overlay}</div>
+          <div className="absolute inset-0 z-10">{overlay}</div>
         )}
       </div>
 

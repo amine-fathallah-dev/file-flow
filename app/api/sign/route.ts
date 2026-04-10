@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
-import { embedSignature, appendAuditCertificate, sha256 } from '@/lib/pdf';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { embedSignature } from '@/lib/pdf';
 import { convertToPdfViaLibreOffice } from '@/lib/gotenberg';
 
 export const maxDuration = 300;
@@ -20,42 +20,27 @@ export async function POST(req: NextRequest) {
   const y = parseFloat(form.get('y') as string ?? '40');
   const width = parseFloat(form.get('width') as string ?? '160');
   const height = parseFloat(form.get('height') as string ?? '60');
-  const label = form.get('label') as string ?? '';
+  const textAnnotationsRaw = form.get('textAnnotations') as string ?? '[]';
+  const textAnnotations = JSON.parse(textAnnotationsRaw) as Array<{
+    text: string; x: number; y: number; fontSize: number; page: number;
+  }>;
 
   if (!pdfFile || !signatureDataUrl) {
     return NextResponse.json({ error: 'Fichier ou signature manquant.' }, { status: 400 });
   }
 
-  // Signature data URL → Buffer (PNG)
   const base64 = signatureDataUrl.replace(/^data:image\/\w+;base64,/, '');
   const signatureBuffer = Buffer.from(base64, 'base64');
 
   let pdfBuffer = Buffer.from(await pdfFile.arrayBuffer());
 
-  // If DOCX uploaded, convert to PDF first
   if (pdfFile.name.toLowerCase().endsWith('.docx')) {
     const converted = await convertToPdfViaLibreOffice(pdfBuffer, pdfFile.name);
     pdfBuffer = Buffer.from(converted);
   }
 
-  // Get signer profile
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name, email')
-    .eq('id', user.id)
-    .single();
-
-  const signerName = profile?.full_name ?? profile?.email ?? user.email ?? 'Inconnu';
-  const signerIp =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    'inconnue';
-
-  const signedAt = new Date();
-
   try {
-    // 1. Embed signature
-    const withSignature = await embedSignature({
+    const signedPdf = await embedSignature({
       pdfBuffer,
       signatureImageBuffer: signatureBuffer,
       page,
@@ -63,44 +48,10 @@ export async function POST(req: NextRequest) {
       y,
       width,
       height,
-      label,
-      signerName,
-      signedAt,
+      textAnnotations,
     });
 
-    // 2. Compute hash before appending audit page
-    const hash = sha256(Buffer.from(withSignature));
-
-    // 3. Append audit certificate
-    const finalPdf = await appendAuditCertificate({
-      pdfBytes: withSignature,
-      signerName,
-      signerIp,
-      signedAt,
-      sha256Hash: hash,
-      originalFilename: pdfFile.name,
-    });
-
-    // 4. Upload to Supabase Storage
-    const storagePath = `${user.id}/${Date.now()}_${pdfFile.name.replace('.docx', '.pdf')}`;
-    await supabase.storage
-      .from('signed-documents')
-      .upload(storagePath, Buffer.from(finalPdf), {
-        contentType: 'application/pdf',
-        upsert: false,
-      });
-
-    // 5. Record in DB
-    await supabase.from('signed_documents').insert({
-      user_id: user.id,
-      original_filename: pdfFile.name,
-      signed_at: signedAt.toISOString(),
-      sha256_hash: hash,
-      signer_ip: signerIp,
-      storage_path: storagePath,
-    });
-
-    return new NextResponse(finalPdf, {
+    return new NextResponse(signedPdf, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="signed_${pdfFile.name.replace('.docx', '.pdf')}"`,

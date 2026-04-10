@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { CONVERSION_MATRIX, MIME_TYPES, type FileFormat } from '@/lib/formats';
 import { convertToPdfViaLibreOffice, convertPdfToDocx } from '@/lib/gotenberg';
 import { imagesToPdf } from '@/lib/pdf';
@@ -68,15 +68,6 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-
-  // Persist to history
-  await supabase.from('conversions').insert({
-    user_id: user.id,
-    original_filename: file.name,
-    original_format: from,
-    output_format: to,
-    file_size: file.size,
-  });
 
   const mimeType = MIME_TYPES[to] ?? 'application/octet-stream';
   return new NextResponse(outputBuffer, {

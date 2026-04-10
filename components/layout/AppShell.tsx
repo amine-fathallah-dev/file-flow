@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import Navbar from './Navbar';
 
 export default async function AppShell({ children }: { children: React.ReactNode }) {
