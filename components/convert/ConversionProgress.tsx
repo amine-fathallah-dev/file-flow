@@ -16,10 +16,10 @@ export default function ConversionProgress({ isGotenberg }: ConversionProgressPr
       setProgress((p) => (p < 88 ? p + Math.random() * 8 : p));
     }, 600);
 
-    // Show cold-start warning for Gotenberg calls after 5 s
+    // Show cold-start warning for Gotenberg calls after 2 s
     let coldStartTimer: ReturnType<typeof setTimeout>;
     if (isGotenberg) {
-      coldStartTimer = setTimeout(() => setShowColdStartMessage(true), 5000);
+      coldStartTimer = setTimeout(() => setShowColdStartMessage(true), 2000);
     }
 
     return () => {
@@ -36,7 +36,7 @@ export default function ConversionProgress({ isGotenberg }: ConversionProgressPr
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
           </svg>
-          Démarrage du moteur de conversion… (peut prendre ~30 secondes)
+          Conversion en cours via LibreOffice — la première fois peut prendre jusqu'à 60 secondes.
         </div>
       )}
 

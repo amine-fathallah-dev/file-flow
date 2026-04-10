@@ -2,7 +2,7 @@ export type FileFormat = 'PDF' | 'DOCX' | 'XLSX' | 'JPG' | 'PNG' | 'WEBP';
 
 /** Canonical conversion matrix */
 export const CONVERSION_MATRIX: Record<FileFormat, FileFormat[]> = {
-  PDF:  ['DOCX', 'JPG', 'PNG'],
+  PDF:  ['JPG', 'PNG'],
   DOCX: ['PDF'],
   XLSX: ['PDF'],
   JPG:  ['PDF', 'PNG', 'WEBP'],
@@ -12,7 +12,7 @@ export const CONVERSION_MATRIX: Record<FileFormat, FileFormat[]> = {
 
 /** Default output format for each input format */
 export const DEFAULT_OUTPUT: Record<FileFormat, FileFormat> = {
-  PDF:  'DOCX',
+  PDF:  'JPG',
   DOCX: 'PDF',
   XLSX: 'PDF',
   JPG:  'PDF',

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { CONVERSION_MATRIX, MIME_TYPES, type FileFormat } from '@/lib/formats';
-import { convertToPdfViaLibreOffice, convertPdfToDocx } from '@/lib/gotenberg';
+import { convertToPdfViaLibreOffice } from '@/lib/gotenberg';
 import { imagesToPdf } from '@/lib/pdf';
 import { convertImage, type ImageFormat } from '@/lib/sharp';
 
@@ -36,9 +36,6 @@ export async function POST(req: NextRequest) {
     // --- Routing logic ---
     if ((from === 'DOCX' || from === 'XLSX') && to === 'PDF') {
       outputBuffer = await convertToPdfViaLibreOffice(inputBuffer, file.name);
-
-    } else if (from === 'PDF' && to === 'DOCX') {
-      outputBuffer = await convertPdfToDocx(inputBuffer, file.name);
 
     } else if (['JPG', 'PNG', 'WEBP'].includes(from) && to === 'PDF') {
       outputBuffer = await imagesToPdf([inputBuffer]);
