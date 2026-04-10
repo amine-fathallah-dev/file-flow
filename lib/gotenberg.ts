@@ -29,7 +29,7 @@ export async function convertToPdfViaLibreOffice(
   filename: string
 ): Promise<Buffer> {
   const form = new FormData();
-  const blob = new Blob([fileBuffer]);
+  const blob = new Blob([new Uint8Array(fileBuffer)]);
   form.append('files', blob, filename);
   return callGotenberg('/forms/libreoffice/convert', form);
 }
@@ -40,7 +40,7 @@ export async function convertPdfToDocx(
   filename: string
 ): Promise<Buffer> {
   const form = new FormData();
-  const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
+  const blob = new Blob([new Uint8Array(pdfBuffer)], { type: "application/pdf" });
   form.append('files', blob, filename);
   // Gotenberg uses the output-filename to infer desired format
   form.append('nativePdfFormats', 'false');
@@ -53,7 +53,7 @@ export async function convertPdfToImage(
   filename: string
 ): Promise<Buffer> {
   const form = new FormData();
-  const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
+  const blob = new Blob([new Uint8Array(pdfBuffer)], { type: "application/pdf" });
   // Rename to .png so Gotenberg outputs a PNG
   const outputName = filename.replace(/\.pdf$/i, '.png');
   form.append('files', blob, outputName);
