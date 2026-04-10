@@ -1,5 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import crypto from 'crypto';
+import sharp from 'sharp';
 
 export interface TextAnnotation {
   text: string;
@@ -55,7 +56,12 @@ export async function embedSignature(opts: SignatureEmbedOptions): Promise<Uint8
   const targetPage = pages[opts.page];
   const { width: pageW, height: pageH } = targetPage.getSize();
 
-  const pngImage = await pdfDoc.embedPng(opts.signatureImageBuffer);
+  // Flatten transparency to white background — avoids "ColorSpace incorrect" in Adobe Acrobat
+  const flatPng = await sharp(opts.signatureImageBuffer)
+    .flatten({ background: { r: 255, g: 255, b: 255 } })
+    .png()
+    .toBuffer();
+  const pngImage = await pdfDoc.embedPng(flatPng);
   const { x, y, width, height } = toPageCoords(opts.x, opts.y, opts.width, opts.height, pageW, pageH);
 
   targetPage.drawImage(pngImage, { x, y, width, height });
@@ -81,7 +87,7 @@ export async function embedSignature(opts: SignatureEmbedOptions): Promise<Uint8
     }
   }
 
-  return pdfDoc.save();
+  return pdfDoc.save({ useObjectStreams: false });
 }
 
 export interface AuditCertificateOptions {
