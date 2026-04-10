@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
   }
 
   const mimeType = MIME_TYPES[to] ?? 'application/octet-stream';
-  return new NextResponse(outputBuffer, {
+  return new NextResponse(new Uint8Array(outputBuffer), {
     headers: {
       'Content-Type': mimeType,
       'Content-Disposition': `attachment; filename="converted.${to.toLowerCase()}"`,
