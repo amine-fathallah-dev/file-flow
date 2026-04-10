@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       textAnnotations,
     });
 
-    return new NextResponse(signedPdf, {
+    return new NextResponse(new Uint8Array(signedPdf), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="signed_${pdfFile.name.replace('.docx', '.pdf')}"`,
