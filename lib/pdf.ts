@@ -51,8 +51,15 @@ function toPageCoords(
 
 /** Embed a signature image into a PDF page and return the modified PDF bytes */
 export async function embedSignature(opts: SignatureEmbedOptions): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.load(opts.pdfBuffer);
-  const pages = pdfDoc.getPages();
+  // Load source PDF, tolerating broken object references
+  const srcDoc = await PDFDocument.load(opts.pdfBuffer, { ignoreEncryption: true });
+
+  // Copy all pages into a fresh document — avoids carrying over broken ColorSpace refs
+  const outDoc = await PDFDocument.create();
+  const copiedPages = await outDoc.copyPages(srcDoc, srcDoc.getPageIndices());
+  copiedPages.forEach((p) => outDoc.addPage(p));
+
+  const pages = outDoc.getPages();
   const targetPage = pages[opts.page];
   const { width: pageW, height: pageH } = targetPage.getSize();
 
@@ -61,14 +68,14 @@ export async function embedSignature(opts: SignatureEmbedOptions): Promise<Uint8
     .flatten({ background: { r: 255, g: 255, b: 255 } })
     .png()
     .toBuffer();
-  const pngImage = await pdfDoc.embedPng(flatPng);
+  const pngImage = await outDoc.embedPng(flatPng);
   const { x, y, width, height } = toPageCoords(opts.x, opts.y, opts.width, opts.height, pageW, pageH);
 
   targetPage.drawImage(pngImage, { x, y, width, height });
 
   // Embed text annotations
   if (opts.textAnnotations?.length) {
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const font = await outDoc.embedFont(StandardFonts.Helvetica);
     for (const ann of opts.textAnnotations) {
       if (!ann.text.trim()) continue;
       const annPage = pages[ann.page];
@@ -87,7 +94,7 @@ export async function embedSignature(opts: SignatureEmbedOptions): Promise<Uint8
     }
   }
 
-  return pdfDoc.save({ useObjectStreams: false });
+  return outDoc.save({ useObjectStreams: false });
 }
 
 export interface AuditCertificateOptions {
